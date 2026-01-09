@@ -1,16 +1,24 @@
-# Fastify Official Demo
+# Fastify Demo
 
-[![CI](https://github.com/fastify/demo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fastify/demo/actions/workflows/ci.yml)
+A production-ready REST API built with Fastify, TypeScript, and MongoDB.
 
-The aim of this repository is to provide a concrete example of a Fastify application using what are considered best practices by the Fastify community.
+## Features
 
-**Prerequisites:** You need to have Node.js version 22 or higher installed.
+- ✅ RESTful API with OpenAPI documentation
+- ✅ MongoDB database with official Fastify plugin
+- ✅ User authentication and session management
+- ✅ Role-based access control (RBAC)
+- ✅ File upload support
+- ✅ CSV export functionality
+- ✅ Rate limiting and security headers
+- ✅ Full TypeScript support
+- ✅ Comprehensive test coverage
 
-## About the Application
+**Prerequisites:** Node.js version 18 or higher
 
-This demo is a simple task management API. 
-It allows users to create, retrieve, update, and delete tasks.
-Additional features include file uploads, CSV downloads, task assignment, and role-based access control.
+## About
+
+This is a Fastify application with user authentication, role-based permissions, and file handling capabilities.
 
 ## Getting started
 Install the dependencies:
@@ -26,7 +34,7 @@ Make sure `COOKIE_SECRET` is set to a secret with at least 32 characters.
 
 ### Database
 
-You can run a MySQL instance with Docker:
+You can run a MongoDB instance with Docker:
 ```bash
 docker compose up
 ```
@@ -36,18 +44,15 @@ To run it in the background:
 docker compose up -d
 ```
 
-To create the database, run:
-```bash
-npm run db:create
-```
-
-To create and update the database schema, run the migrations:
-```bash
-npm run db:migrate
-```
-
 To populate the database with initial data, run:
 ```bash
+CAN_SEED_DATABASE=1 npm run db:seed
+```
+
+This creates three test users:
+- **basic@example.com** (role: basic) - Password: `Password123$`
+- **moderator@example.com** (roles: basic, moderator) - Password: `Password123$`
+- **admin@example.com** (roles: basic, moderator, admin) - Password: `Password123$`
 npm run db:seed
 ```
 

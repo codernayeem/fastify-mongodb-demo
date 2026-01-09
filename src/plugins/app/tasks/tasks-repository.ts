@@ -7,7 +7,7 @@ import {
   Task,
   UpdateTaskSchema
 } from '../../../schemas/tasks.js'
-import { Knex } from 'knex'
+import { Db, ClientSession, ObjectId } from 'mongodb'
 
 declare module 'fastify' {
   export interface FastifyInstance {
@@ -17,92 +17,138 @@ declare module 'fastify' {
 
 type CreateTask = Static<typeof CreateTaskSchema>
 type UpdateTask = Omit<Static<typeof UpdateTaskSchema>, 'assigned_user_id'> & {
-  assigned_user_id?: number | null;
+  assigned_user_id?: string | null;
   filename?: string
 }
 
 type TaskQuery = Static<typeof QueryTaskPaginationSchema>
 
 function createRepository (fastify: FastifyInstance) {
-  const knex = fastify.knex
+  const db: Db = fastify.mongo.db!
 
   return {
     async paginate (q: TaskQuery) {
-      const offset = (q.page - 1) * q.limit
-
-      const query = fastify
-        .knex<Task & { total: number }>('tasks')
-        .select('*')
-        .select(fastify.knex.raw('count(*) OVER() as total'))
+      const filter: any = {}
 
       if (q.author_id !== undefined) {
-        query.where({ author_id: q.author_id })
+        filter.author_id = q.author_id
       }
 
       if (q.assigned_user_id !== undefined) {
-        query.where({ assigned_user_id: q.assigned_user_id })
+        filter.assigned_user_id = q.assigned_user_id
       }
 
       if (q.status !== undefined) {
-        query.where({ status: q.status })
+        filter.status = q.status
       }
 
-      const tasks = await query
-        .limit(q.limit)
-        .offset(offset)
-        .orderBy('created_at', q.order)
+      const offset = (q.page - 1) * q.limit
+      const sortOrder = q.order === 'asc' ? 1 : -1
+
+      const [tasks, total] = await Promise.all([
+        db.collection('tasks')
+          .find(filter)
+          .sort({ created_at: sortOrder })
+          .skip(offset)
+          .limit(q.limit)
+          .toArray(),
+        db.collection('tasks').countDocuments(filter)
+      ])
 
       return {
-        tasks,
-        total: tasks.length > 0 ? Number(tasks[0].total) : 0
+        tasks: tasks.map(task => {
+          const { _id, ...rest } = task
+          return {
+            ...rest,
+            id: _id.toString()
+          } as Task
+        }),
+        total
       }
     },
 
-    async findById (id: number, trx?: Knex) {
-      return (trx ?? knex)<Task>('tasks').where({ id }).first()
+    async findById (id: string, session?: ClientSession) {
+      const task = await db.collection('tasks').findOne(
+        { _id: new ObjectId(id) },
+        { session }
+      )
+
+      if (!task) return null
+
+      const { _id, ...rest } = task
+      return {
+        ...rest,
+        id: _id.toString()
+      } as Task
     },
 
     async findByFilename (filename: string) {
-      return await fastify
-        .knex<Task>('tasks')
-        .select('filename')
-        .where({ filename })
-        .first()
+      const task = await db.collection('tasks').findOne(
+        { filename },
+        { projection: { filename: 1 } }
+      )
+
+      if (!task) return null
+
+      return {
+        filename: task.filename
+      }
     },
 
     async create (newTask: CreateTask) {
-      const [id] = await knex<Task>('tasks').insert(newTask)
-      return id
+      const result = await db.collection('tasks').insertOne({
+        ...newTask,
+        created_at: new Date(),
+        updated_at: new Date()
+      })
+
+      return result.insertedId.toString()
     },
 
-    async update (id: number, changes: UpdateTask, trx?: Knex) {
-      const affectedRows = await (trx ?? knex)('tasks')
-        .where({ id })
-        .update(changes)
+    async update (id: string, changes: UpdateTask, session?: ClientSession) {
+      const result = await db.collection('tasks').findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            ...changes,
+            updated_at: new Date()
+          }
+        },
+        {
+          returnDocument: 'after',
+          session
+        }
+      )
 
-      if (affectedRows === 0) {
-        return null
-      }
+      if (!result) return null
 
-      return this.findById(id)
+      const { _id, ...rest } = result
+      return {
+        ...rest,
+        id: _id.toString()
+      } as Task
     },
 
-    async deleteFilename (filename: string, value: string | null, trx: Knex) {
-      const affectedRows = await trx('tasks')
-        .where({ filename })
-        .update({ filename: value })
+    async deleteFilename (filename: string, value: string | null, session: ClientSession) {
+      const result = await db.collection('tasks').updateOne(
+        { filename },
+        { $set: { filename: value } },
+        { session }
+      )
 
-      return affectedRows > 0
+      return result.modifiedCount > 0
     },
 
-    async delete (id: number) {
-      const affectedRows = await knex<Task>('tasks').where({ id }).delete()
+    async delete (id: string) {
+      const result = await db.collection('tasks').deleteOne(
+        { _id: new ObjectId(id) }
+      )
 
-      return affectedRows > 0
+      return result.deletedCount > 0
     },
 
     createStream () {
-      return knex.select('*').from('tasks').stream()
+      return db.collection('tasks').find().stream()
     }
   }
 }
@@ -113,6 +159,6 @@ export default fp(
   },
   {
     name: 'tasks-repository',
-    dependencies: ['knex']
+    dependencies: ['mongodb']
   }
 )

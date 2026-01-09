@@ -1,4 +1,4 @@
-import { createConnection, Connection } from 'mysql2/promise'
+import { MongoClient, ObjectId } from 'mongodb'
 import { scryptHash } from '../src/plugins/app/password-manager.js'
 
 if (Number(process.env.CAN_SEED_DATABASE) !== 1) {
@@ -6,47 +6,34 @@ if (Number(process.env.CAN_SEED_DATABASE) !== 1) {
 }
 
 async function seed () {
-  const connection: Connection = await createConnection({
-    multipleStatements: true,
-    host: process.env.MYSQL_HOST,
-    port: Number(process.env.MYSQL_PORT),
-    database: process.env.MYSQL_DATABASE,
-    user: process.env.MYSQL_USER,
-    password: process.env.MYSQL_PASSWORD
-  })
+  const client = new MongoClient(process.env.MONGODB_URI!)
 
   try {
-    await truncateTables(connection)
-    await seedUsers(connection)
+    await client.connect()
+    const db = client.db()
+
+    await truncateCollections(db)
+    await seedUsers(db)
+
+    console.log('Database seeded successfully!')
   } catch (error) {
     console.error('Error seeding database:', error)
   } finally {
-    await connection.end()
+    await client.close()
   }
 }
 
-async function truncateTables (connection: Connection) {
-  const [tables]: any[] = await connection.query('SHOW TABLES')
+async function truncateCollections (db: any) {
+  const collections = await db.listCollections().toArray()
 
-  if (tables.length > 0) {
-    const tableNames = tables.map(
-      (row: Record<string, string>) => row[`Tables_in_${process.env.MYSQL_DATABASE}`]
-    )
-    const truncateQueries = tableNames
-      .map((tableName: string) => `TRUNCATE TABLE \`${tableName}\``)
-      .join('; ')
-
-    await connection.query('SET FOREIGN_KEY_CHECKS = 0')
-    try {
-      await connection.query(truncateQueries)
-      console.log('All tables have been truncated successfully.')
-    } finally {
-      await connection.query('SET FOREIGN_KEY_CHECKS = 1')
-    }
+  for (const collection of collections) {
+    await db.collection(collection.name).deleteMany({})
   }
+
+  console.log('All collections have been truncated successfully.')
 }
 
-async function seedUsers (connection: Connection) {
+async function seedUsers (db: any) {
   const users = [
     { username: 'basic', email: 'basic@example.com' },
     { username: 'moderator', email: 'moderator@example.com' },
@@ -56,31 +43,26 @@ async function seedUsers (connection: Connection) {
 
   // The goal here is to create a role hierarchy
   // E.g. an admin should have all the roles
-  const rolesAccumulator: number[] = []
+  const rolesAccumulator: ObjectId[] = []
 
   for (const user of users) {
-    const [userResult] = await connection.execute(`
-      INSERT INTO users (username, email, password)
-      VALUES (?, ?, ?)
-    `, [user.username, user.email, hash])
+    // Create role first
+    const roleResult = await db.collection('roles').insertOne({
+      name: user.username
+    })
 
-    const userId = (userResult as { insertId: number }).insertId
-
-    const [roleResult] = await connection.execute(`
-      INSERT INTO roles (name)
-      VALUES (?)
-    `, [user.username])
-
-    const newRoleId = (roleResult as { insertId: number }).insertId
-
+    const newRoleId = roleResult.insertedId
     rolesAccumulator.push(newRoleId)
 
-    for (const roleId of rolesAccumulator) {
-      await connection.execute(`
-        INSERT INTO user_roles (user_id, role_id)
-        VALUES (?, ?)
-      `, [userId, roleId])
-    }
+    // Create user with accumulated roles
+    await db.collection('users').insertOne({
+      username: user.username,
+      email: user.email,
+      password: hash,
+      roles: [...rolesAccumulator],
+      created_at: new Date(),
+      updated_at: new Date()
+    })
   }
 
   console.log('Users have been seeded successfully.')

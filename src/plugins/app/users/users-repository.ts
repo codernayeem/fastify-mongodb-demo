@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { Knex } from 'knex'
+import { Db, ClientSession, ObjectId } from 'mongodb'
 import fp from 'fastify-plugin'
 import { Auth } from '../../../schemas/auth.js'
 
@@ -10,32 +10,49 @@ declare module 'fastify' {
 }
 
 export function createUsersRepository (fastify: FastifyInstance) {
-  const knex = fastify.knex
+  const db: Db = fastify.mongo.db!
 
   return {
-    async findByEmail (email: string, trx?: Knex) {
-      const user: Auth & { password: string } = await (trx ?? knex)('users')
-        .select('id', 'username', 'password', 'email')
-        .where({ email })
-        .first()
+    async findByEmail (email: string, session?: ClientSession) {
+      const user = await db.collection('users')
+        .findOne(
+          { email },
+          { session, projection: { _id: 1, username: 1, password: 1, email: 1 } }
+        )
 
-      return user
+      if (!user) return null
+
+      return {
+        id: user._id.toString(),
+        username: user.username,
+        password: user.password,
+        email: user.email
+      } as Auth & { password: string }
     },
 
     async updatePassword (email: string, hashedPassword: string) {
-      return knex('users')
-        .update({ password: hashedPassword })
-        .where({ email })
+      const result = await db.collection('users')
+        .updateOne(
+          { email },
+          { $set: { password: hashedPassword } }
+        )
+
+      return result.modifiedCount
     },
 
-    async findUserRolesByEmail (email: string, trx: Knex) {
-      const roles: ({ name: string })[] = await trx('roles')
-        .select('roles.name')
-        .join('user_roles', 'roles.id', '=', 'user_roles.role_id')
-        .join('users', 'user_roles.user_id', '=', 'users.id')
-        .where('users.email', email)
+    async findUserRolesByEmail (email: string, session: ClientSession) {
+      const user = await db.collection('users')
+        .findOne({ email }, { session, projection: { roles: 1 } })
 
-      return roles
+      if (!user || !user.roles) return []
+
+      const roleIds = user.roles.map((id: ObjectId) => new ObjectId(id))
+
+      const roles = await db.collection('roles')
+        .find({ _id: { $in: roleIds } }, { session, projection: { name: 1 } })
+        .toArray()
+
+      return roles.map(role => ({ name: role.name }))
     }
   }
 }
@@ -47,6 +64,6 @@ export default fp(
   },
   {
     name: 'users-repository',
-    dependencies: ['knex']
+    dependencies: ['mongodb']
   }
 )

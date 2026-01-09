@@ -4,11 +4,7 @@ declare module 'fastify' {
   export interface FastifyInstance {
     config: {
       PORT: number;
-      MYSQL_HOST: string;
-      MYSQL_PORT: string;
-      MYSQL_USER: string;
-      MYSQL_PASSWORD: string;
-      MYSQL_DATABASE: string;
+      MONGODB_URI: string;
       COOKIE_SECRET: string;
       COOKIE_NAME: string;
       COOKIE_SECURED: boolean;
@@ -22,32 +18,14 @@ declare module 'fastify' {
 const schema = {
   type: 'object',
   required: [
-    'MYSQL_HOST',
-    'MYSQL_PORT',
-    'MYSQL_USER',
-    'MYSQL_PASSWORD',
-    'MYSQL_DATABASE',
+    'MONGODB_URI',
     'COOKIE_SECRET',
     'COOKIE_NAME',
     'COOKIE_SECURED'
   ],
   properties: {
     // Database
-    MYSQL_HOST: {
-      type: 'string',
-      default: 'localhost'
-    },
-    MYSQL_PORT: {
-      type: 'number',
-      default: 3306
-    },
-    MYSQL_USER: {
-      type: 'string'
-    },
-    MYSQL_PASSWORD: {
-      type: 'string'
-    },
-    MYSQL_DATABASE: {
+    MONGODB_URI: {
       type: 'string'
     },
 

@@ -37,7 +37,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         params: Type.Object({
-          id: Type.Number()
+          id: Type.String()
         }),
         response: {
           200: TaskSchema,
@@ -65,7 +65,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         body: CreateTaskSchema,
         response: {
           201: {
-            id: Type.Number()
+            id: Type.String()
           }
         },
         tags: ['Tasks']
@@ -91,7 +91,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         params: Type.Object({
-          id: Type.Number()
+          id: Type.String()
         }),
         body: UpdateTaskSchema,
         response: {
@@ -118,7 +118,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         params: Type.Object({
-          id: Type.Number()
+          id: Type.String()
         }),
         response: {
           204: Type.Null(),
@@ -143,10 +143,10 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         params: Type.Object({
-          id: Type.Number()
+          id: Type.String()
         }),
         body: Type.Object({
-          userId: Type.Optional(Type.Number())
+          userId: Type.Optional(Type.String())
         }),
         response: {
           200: TaskSchema,
@@ -178,7 +178,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         params: Type.Object({
-          id: Type.Number()
+          id: Type.String()
         }),
         consumes: ['multipart/form-data'],
         response: {
@@ -219,22 +219,25 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         oldTempFilename = await tasksFileManager.moveOldToTemp(oldFilename)
       }
 
-      return fastify.knex
-        .transaction(async (trx) => {
+      const session = fastify.mongo.client.startSession()
+
+      try {
+        await session.withTransaction(async () => {
           const newFilename = `${id}_${file.filename}`
-          await tasksRepository.update(id, { filename: newFilename }, trx)
+          await tasksRepository.update(id, { filename: newFilename }, session)
 
           await tasksFileManager.upload(newFilename, file)
-
-          return { message: 'File uploaded successfully' }
         })
-        .catch(async (err) => {
-          if (oldFilename && oldTempFilename) {
-            await tasksFileManager.moveTempToOld(oldTempFilename, oldFilename)
-          }
 
-          throw err
-        })
+        return { message: 'File uploaded successfully' }
+      } catch (err) {
+        if (oldFilename && oldTempFilename) {
+          await tasksFileManager.moveTempToOld(oldTempFilename, oldFilename)
+        }
+        throw err
+      } finally {
+        await session.endSession()
+      }
     }
   )
 
@@ -287,20 +290,26 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     async function (request, reply) {
       const { filename } = request.params
 
-      return fastify.knex
-        .transaction(async (trx) => {
-          const hasBeenUpdated = await tasksRepository.deleteFilename(filename, null, trx)
+      const session = fastify.mongo.client.startSession()
+
+      try {
+        await session.withTransaction(async () => {
+          const hasBeenUpdated = await tasksRepository.deleteFilename(filename, null, session)
 
           if (!hasBeenUpdated) {
-            return reply.notFound(`No task has filename "${filename}"`)
+            throw new Error(`No task has filename "${filename}"`)
           }
 
           await tasksFileManager.delete(filename)
-
-          reply.code(204)
-
-          return { message: 'File deleted successfully' }
         })
+
+        reply.code(204)
+        return null
+      } catch (err: any) {
+        return reply.notFound(err.message)
+      } finally {
+        await session.endSession()
+      }
     }
   )
 

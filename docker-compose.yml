@@ -1,20 +1,19 @@
 services:
   db:
-    image: mysql:8.4
+    image: mongo:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: fastify_demo
     ports:
-      - 3306:3306
+      - 27017:27017
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 3
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data:/data/db
 
 volumes:
   db_data:

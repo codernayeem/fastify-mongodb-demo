@@ -10,13 +10,14 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
       schema: {
         response: {
           200: Type.Object({
-            message: Type.String()
+            message: Type.String(),
+            status: Type.String()
           })
         }
       }
     },
     async function () {
-      return { message: 'Welcome to the official fastify demo!' }
+      return { message: 'Fastify Demo - v1.0.0', status: 'operational' }
     }
   )
 }
